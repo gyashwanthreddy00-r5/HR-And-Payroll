@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8" /><title>Engine tests</title>
+<style>body{font:14px system-ui;margin:24px} .ok{color:#2f7a4b} .bad{color:#b3361f} pre{background:#f5f4f0;padding:8px}</style></head>
+<body><h2>Payroll engine tests</h2><div id="out"></div>
+<script type="module">
+import { calculatePayroll, monthCalendar, mergeComponents, countLeaves, daysInMonthFor, evalFormula, ptForGross } from '../js/engine.js';
+
+const out = document.getElementById('out');
+let pass = 0, fail = 0;
+const eq = (name, got, want) => {
+  const ok = JSON.stringify(got) === JSON.stringify(want);
+  ok ? pass++ : fail++;
+  out.insertAdjacentHTML('beforeend', `<div class="${ok ? 'ok' : 'bad'}">${ok ? '✓' : '✗'} ${name}${ok ? '' : ` — got <b>${JSON.stringify(got)}</b>, want <b>${JSON.stringify(want)}</b>`}</div>`);
+};
+
+const company = { lop_basis: 'calendar', weekly_offs: [0, 6], pf_enabled: true, pf_rate: 12, pf_cap: 15000, esi_enabled: true, esi_rate: 0.75, esi_limit: 21000, pt_enabled: true };
+const comps = [
+  { id: 'b', name: 'Basic', code: 'BASIC', type: 'earning', calc_type: 'pct_gross', value: 50, statutory_key: 'basic', sort_order: 1 },
+  { id: 'h', name: 'HRA', code: 'HRA', type: 'earning', calc_type: 'pct_basic', value: 40, sort_order: 2 },
+  { id: 's', name: 'Special', code: 'SPECIAL', type: 'earning', calc_type: 'balance', value: 0, sort_order: 3 },
+  { id: 'pf', name: 'PF', code: 'PF', type: 'deduction', calc_type: 'statutory', statutory_key: 'pf', sort_order: 4 },
+  { id: 'esi', name: 'ESI', code: 'ESI', type: 'deduction', calc_type: 'statutory', statutory_key: 'esi', sort_order: 5 },
+  { id: 'pt', name: 'PT', code: 'PT', type: 'deduction', calc_type: 'statutory', statutory_key: 'pt', sort_order: 6 },
+  { id: 'tds', name: 'TDS', code: 'TDS', type: 'deduction', calc_type: 'statutory', statutory_key: 'tds', sort_order: 7 },
+];
+const pt = [{ min_gross: 0, max_gross: 15000, amount: 0 }, { min_gross: 15000.01, max_gross: 20000, amount: 150 }, { min_gross: 20000.01, max_gross: null, amount: 200 }];
+const types = [{ id: 'cl', code: 'CL', paid: true }, { id: 'lop', code: 'LOP', paid: false }];
+const nov = monthCalendar(2026, 11, [0, 6]);
+
+// Worked example from the spec: ₹60,000 gross, November (30 days), 2 days unpaid leave, TDS 2,150 → net 51,850
+const entries = [{ date: '2026-11-19', kind: 'leave', leave_type_id: 'lop' }, { date: '2026-11-20', kind: 'leave', leave_type_id: 'lop' }, { date: '2026-11-10', kind: 'leave', leave_type_id: 'cl' }];
+const r = calculatePayroll({ company, salary: { monthly_gross: 60000, annual_ctc: 720000 }, comps, cal: nov, entries, leaveTypes: types, ptSlabs: pt, adjustments: { tds: 2150, additions: [], deductions: [] } });
+eq('days in month (calendar)', r.days_in_month, 30);
+eq('lop days', r.lop_days, 2);
+eq('paid days', r.paid_days, 28);
+eq('per day', r.per_day, 2000);
+eq('lop amount', r.lop_amount, 4000);
+eq('earned basic', r.earnings.find(e => e.code === 'BASIC').amount, 28000);
+eq('pf = 12% of 15,000', r.deductions.find(d => d.code === 'PF').amount, 1800);
+eq('no ESI above 21,000', r.deductions.find(d => d.code === 'ESI'), undefined);
+eq('pt', r.deductions.find(d => d.code === 'PT').amount, 200);
+eq('net pay 51,850', r.net, 51850);
+
+// Breakup (screen 4): Basic 30,000 / HRA 12,000 / Special 18,000
+const full = calculatePayroll({ company, salary: { monthly_gross: 60000, annual_ctc: 720000 }, comps, cal: nov, ptSlabs: pt });
+eq('breakup', full.earnings.map(e => e.amount), [30000, 12000, 18000]);
+
+// Day bases
+eq('fixed30', daysInMonthFor('fixed30', nov), 30);
+eq('working days Nov 2026', daysInMonthFor('working', nov), 21);
+const hol = monthCalendar(2026, 11, [0, 6], [{ date: '2026-11-09', name: 'Holiday' }]);
+eq('working days with a holiday', daysInMonthFor('working', hol), 20);
+
+// Half days and absence; leave on weekend ignored
+const lv = countLeaves({ cal: nov, leaveTypes: types, entries: [
+  { date: '2026-11-03', kind: 'absent' }, { date: '2026-11-04', kind: 'leave', leave_type_id: 'lop', half_day: true },
+  { date: '2026-11-07', kind: 'absent' } /* Saturday */ ] });
+eq('lop with half day, weekend ignored', lv.lop, 1.5);
+
+// New joiner on 16 Nov: 15 days LOP (calendar)
+const nj = calculatePayroll({ company, employee: { doj: '2026-11-16' }, salary: { monthly_gross: 30000, annual_ctc: 360000 }, comps, cal: nov, ptSlabs: pt });
+eq('new joiner paid days', nj.paid_days, 15);
+eq('new joiner earned gross', nj.earned_gross, 15000);
+
+// ESI applies at or below 21,000
+const low = calculatePayroll({ company, salary: { monthly_gross: 18000, annual_ctc: 216000 }, comps, cal: nov, ptSlabs: pt });
+eq('esi 0.75% of 18,000 (rounded up)', low.deductions.find(d => d.code === 'ESI').amount, 135);
+eq('pt 150 slab', low.deductions.find(d => d.code === 'PT').amount, 150);
+eq('pf on basic under cap', low.deductions.find(d => d.code === 'PF').amount, 1080);
+
+// PF switched off
+const nopf = calculatePayroll({ company: { ...company, pf_enabled: false }, salary: { monthly_gross: 60000, annual_ctc: 720000 }, comps, cal: nov, ptSlabs: pt });
+eq('pf disabled', nopf.deductions.find(d => d.code === 'PF'), undefined);
+
+// One-time items
+const adj = calculatePayroll({ company, salary: { monthly_gross: 60000, annual_ctc: 720000 }, comps, cal: nov, ptSlabs: pt, adjustments: { tds: 0, additions: [{ label: 'Bonus', amount: 5000 }], deductions: [{ label: 'Advance', amount: 2000 }] } });
+eq('net with bonus and advance', adj.net, 60000 - 1800 - 200 + 5000 - 2000);
+
+// Formulas
+eq('formula', evalFormula('min(basic * 0.1, 1600)', { basic: 30000, gross: 60000, ctc: 60000, annual_ctc: 720000 }), 1600);
+let threw = false; try { evalFormula('alert(1)', { basic: 1 }); } catch { threw = true; }
+eq('formula rejects unknown names', threw, true);
+
+// Structure overrides
+const merged = mergeComponents([{ component_id: 'b', sort_order: 1, calc_type: 'pct_gross', value: 40 }, { component_id: 's', sort_order: 2 }], comps);
+const ov = calculatePayroll({ company, salary: { monthly_gross: 50000, annual_ctc: 600000 }, comps: merged, cal: nov, ptSlabs: pt });
+eq('override basic 40%', ov.earnings.map(e => e.amount), [20000, 30000]);
+
+// ---------------- Employer PF
+const erCo = { ...company, er_pf_enabled: true, er_pf_rate: 12, er_pf_cap: 15000, er_pf_type: 'EDLI', er_edli_rate: 0.5, er_admin_rate: 0.5 };
+const er = calculatePayroll({ company: erCo, salary: { monthly_gross: 60000, annual_ctc: 720000 }, comps, cal: nov, entries, leaveTypes: types, ptSlabs: pt, adjustments: { tds: 2150, additions: [], deductions: [] } });
+const erLine = (res, code) => (res.employer.find(l => l.code === code) || {}).amount;
+eq('employer PF does not change net pay', er.net, 51850);
+eq('employer PF = 12% of 15,000', er.employer_pf, 1800);
+eq('EPS = 8.33% of 15,000', erLine(er, 'ER_EPS'), 1250);
+eq('EPF = balance (3.67%)', erLine(er, 'ER_EPF'), 550);
+eq('EDLI 0.5% of 15,000', erLine(er, 'ER_EDLI'), 75);
+eq('admin 0.5% of 15,000', erLine(er, 'ER_ADMIN'), 75);
+eq('employer total', er.employer_total, 1950);
+eq('cost to company = earned gross + employer', er.ctc_cost, 56000 + 1950);
+
+const lowEr = calculatePayroll({ company: erCo, salary: { monthly_gross: 18000, annual_ctc: 216000 }, comps, cal: nov, ptSlabs: pt });
+eq('employer PF on wages under ceiling (basic 9,000)', [lowEr.employer_pf, erLine(lowEr, 'ER_EPS'), erLine(lowEr, 'ER_EPF')], [1080, 750, 330]);
+
+const uncapped = calculatePayroll({ company: { ...erCo, er_pf_cap: 0, er_pf_type: 'EPS' }, salary: { monthly_gross: 60000, annual_ctc: 720000 }, comps, cal: nov, ptSlabs: pt });
+eq('no ceiling: 12% of 30,000, EPS still capped at 15,000', [uncapped.employer_pf, erLine(uncapped, 'ER_EPS'), erLine(uncapped, 'ER_EPF')], [3600, 1250, 2350]);
+eq('type EPS has no EDLI/admin lines', uncapped.employer.map(l => l.code), ['ER_EPF', 'ER_EPS']);
+
+const epfOnly = calculatePayroll({ company: { ...erCo, er_pf_type: 'EPF' }, salary: { monthly_gross: 60000, annual_ctc: 720000 }, comps, cal: nov, ptSlabs: pt });
+eq('type EPF: whole share to EPF', epfOnly.employer.map(l => [l.code, l.amount]), [['ER_EPF', 1800]]);
+
+const notEps = calculatePayroll({ company: erCo, employee: { eps_eligible: false }, salary: { monthly_gross: 60000, annual_ctc: 720000 }, comps, cal: nov, ptSlabs: pt });
+eq('EPS-ineligible member: EPS 0, EPF 1,800', [erLine(notEps, 'ER_EPS'), erLine(notEps, 'ER_EPF')], [0, 1800]);
+const senior = calculatePayroll({ company: erCo, employee: { dob: '1968-01-15' }, salary: { monthly_gross: 60000, annual_ctc: 720000 }, comps, cal: nov, ptSlabs: pt });
+eq('aged 58+: no EPS', erLine(senior, 'ER_EPS'), 0);
+
+const erOff = calculatePayroll({ company: { ...erCo, er_pf_enabled: false }, salary: { monthly_gross: 60000, annual_ctc: 720000 }, comps, cal: nov, ptSlabs: pt });
+eq('employer PF disabled', [erOff.employer.length, erOff.employer_total], [0, 0]);
+const internComps = comps.filter(c => c.statutory_key !== 'pf');
+const intern = calculatePayroll({ company: erCo, salary: { monthly_gross: 18000, annual_ctc: 216000 }, comps: internComps, cal: nov, ptSlabs: pt });
+eq('no employer PF when structure has no PF', intern.employer_total, 0);
+
+// ---------------- EPF contribution paid by
+const byCo = calculatePayroll({ company: { ...erCo, er_pf_paid_by: 'employer' }, salary: { monthly_gross: 60000, annual_ctc: 720000 }, comps, cal: nov, ptSlabs: pt });
+eq('paid by company: net unchanged (60,000 − 1,800 − 200)', byCo.net, 58000);
+eq('paid by company: no extra deduction', byCo.deductions.some(d => d.code === 'ER_PF_EE'), false);
+eq('paid by company: company cost 1,950', byCo.employer_total, 1950);
+eq('paid by company: CTC 61,950', byCo.ctc_cost, 61950);
+
+const byEmp = calculatePayroll({ company: { ...erCo, er_pf_paid_by: 'employee' }, salary: { monthly_gross: 60000, annual_ctc: 720000 }, comps, cal: nov, ptSlabs: pt });
+eq('paid by employee: separate Employer EPF and EPS deduction lines', byEmp.deductions.filter(d => d.statutory_key === 'er_pf').map(d => [d.code, d.amount]), [['ER_EPF_EE', 550], ['ER_EPS_EE', 1250]]);
+eq('paid by employee: Employer EPF line never merged into Employee PF', byEmp.deductions.filter(d => d.statutory_key === 'pf').map(d => [d.code, d.amount]), [['PF', 1800]]);
+eq('paid by employee: employee PF deduction untouched', byEmp.deductions.find(d => d.code === 'PF').amount, 1800);
+eq('paid by employee: net reduced by 1,800', byEmp.net, 58000 - 1800);
+eq('paid by employee: company bears only EDLI + admin', byEmp.employer_total, 150);
+eq('paid by employee: CTC = gross + EDLI + admin (no double count)', byEmp.ctc_cost, 60150);
+eq('paid by employee: EPF/EPS still reported for remittance', [byEmp.employer_pf, byEmp.employer.filter(l => l.borne_by === 'employee').map(l => l.code)], [1800, ['ER_EPF', 'ER_EPS']]);
+eq('company cost + recovered = total employer contribution', byEmp.employer_total + byEmp.employer_pf_recovered, byCo.employer_total);
+const byEmpOff = calculatePayroll({ company: { ...erCo, er_pf_enabled: false, er_pf_paid_by: 'employee' }, salary: { monthly_gross: 60000, annual_ctc: 720000 }, comps, cal: nov, ptSlabs: pt });
+eq('paid by employee but employer PF off: nothing deducted', [byEmpOff.net, byEmpOff.employer_pf_recovered], [58000, 0]);
+eq('default (unset) behaves as company', calculatePayroll({ company: erCo, salary: { monthly_gross: 60000, annual_ctc: 720000 }, comps, cal: nov, ptSlabs: pt }).net, 58000);
+
+eq('pt slab boundary 15000', ptForGross(pt, 15000), 0);
+eq('pt slab 15001', ptForGross(pt, 15001), 150);
+
+out.insertAdjacentHTML('afterbegin', `<h3 class="${fail ? 'bad' : 'ok'}">${pass} passed, ${fail} failed</h3>`);
+document.title = `${fail ? 'FAIL' : 'PASS'} ${pass}/${pass + fail}`;
+</script></body></html>
