@@ -4,16 +4,14 @@ import { listRuns, listItems } from '../data.js';
 import { fmt, monthLabel, ym, parseYm, navigate, amountInWords, fmtDate, downloadBlob, downloadCSV } from '../util.js';
 import { generatePayslipPdf, payslipPassword } from '../payslip.js';
 import { generateRunPayslips, zipPayslips } from './payroll.js';
-import { deductionRows, contributionLines, INFO_NOTE } from './employer.js';
 
 /** Screen 7 — the payslip, as HTML (PDF is generated from the same frozen item). */
 export function PayslipView({ company, item, run }) {
   const e = item.employee_json || {};
   const earn = item.earnings_json || [];
-  const ded = deductionRows(item.deductions_json || [], item.employer_json || []);
-  const hasInfo = ded.some(d => d.info);
+  // Payslips show only what is actually deducted from pay: no informational Employer EPF row, no employer contributions.
+  const ded = item.deductions_json || [];
   const rows = Math.max(earn.length, ded.length);
-  const erLines = contributionLines(item.employer_json || []);
   const recovered = ded.filter(d => d.statutory_key === 'er_pf').reduce((s, d) => s + Number(d.amount), 0);
   return html`<div class="slip">
     <div class="row between" style="align-items:flex-start">
@@ -33,23 +31,12 @@ export function PayslipView({ company, item, run }) {
       <tbody>
         ${Array.from({ length: rows }, (_, i) => html`<tr>
           <td>${earn[i]?.name || ''}</td><td class="num">${earn[i] ? fmt(earn[i].amount) : ''}</td>
-          ${ded[i]?.info
-            ? html`<td class="muted">${ded[i].name} †</td><td class="num muted">(${fmt(ded[i].amount)})</td>`
-            : html`<td>${ded[i]?.name || ''}</td><td class="num">${ded[i] ? fmt(ded[i].amount) : ''}</td>`}</tr>`)}
-        <tr class="total"><td>Total earnings</td><td class="num">${fmt(item.earned_gross)}</td><td>${hasInfo ? 'Total deducted from pay' : 'Total deductions'}</td><td class="num">${fmt(item.total_deductions)}</td></tr>
+          <td>${ded[i]?.name || ''}</td><td class="num">${ded[i] ? fmt(ded[i].amount) : ''}</td></tr>`)}
+        <tr class="total"><td>Total earnings</td><td class="num">${fmt(item.earned_gross)}</td><td>Total deductions</td><td class="num">${fmt(item.total_deductions)}</td></tr>
       </tbody>
     </table></div>
-    ${hasInfo && html`<p class="small muted" style="margin:6px 0 0">${INFO_NOTE}</p>`}
     <div class="net">Net pay ₹${fmt(item.net)}</div>
     <div class="small muted">Rupees ${amountInWords(item.net)} only${Number(item.lop_amount) > 0 ? ` · Monthly gross ₹${fmt(item.gross)} less LOP ₹${fmt(item.lop_amount)}` : ''}</div>
-    ${(erLines.length > 0 || hasInfo) && html`<div class="card flush" style="margin-top:14px"><table>
-      <thead><tr><th>Employer contributions <span style="text-transform:none;letter-spacing:0;font-weight:400">(for information, not deducted from your pay)</span></th><th class="num">Wages</th><th class="num">Amount</th></tr></thead>
-      <tbody>
-        ${erLines.map(l => html`<tr><td>${l.name}</td><td class="num">${l.wages ? fmt(l.wages) : '–'}</td><td class="num">${fmt(l.amount)}</td></tr>`)}
-        <tr class="total"><td>Total employer contribution${hasInfo ? ' (incl. Employer EPF †)' : ''}</td><td></td><td class="num">${fmt(item.employer_total)}</td></tr>
-        <tr><td>Cost to company this month</td><td></td><td class="num">${fmt(Number(item.earned_gross) + Number(item.employer_total || 0))}</td></tr>
-      </tbody>
-    </table></div>`}
     ${recovered > 0 && html`<p class="small muted" style="margin:8px 0 0">Employer EPF and EPS (₹${fmt(recovered)}) are borne by you as per company policy. They're deducted under Deductions, separate from your own PF, and remitted to your PF account as the employer share.</p>`}
   </div>`;
 }

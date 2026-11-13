@@ -55,10 +55,10 @@ Settings → Pay rules → **Employer Provident Fund** (migration `002_employer_
   reducing net pay. It stays in `employer_json` (marked `borne_by: 'employee'`) for the PF/ECR remittance, but is excluded
   from company cost. EDLI and admin charges always stay with the company. The employee's own PF deduction is unaffected.
 
-**Employer EPF on payslips** is listed under *Deductions*, on its own line next to (never merged with) Employee PF.
-Its effect follows "EPF contribution paid by": paid by employee → real deduction lines `ER_EPF_EE` / `ER_EPS_EE` reducing net;
-paid by company → an informational row marked † (`deductionRows()` in `js/pages/employer.js`) that is excluded from
-"Total deducted from pay" and from net pay. EPS, EDLI and admin charges stay under Employer Contributions.
+**Payslips (screen and PDF) show only what is deducted from pay.** Employer EPF and the Employer Contributions /
+cost-to-company section are not printed. Paid by company → nothing employer-related appears on the payslip; paid by
+employee → the real deduction lines `ER_EPF_EE` / `ER_EPS_EE` appear under Deductions (they reduce net pay).
+Employer PF is still calculated, stored and shown in the payroll register, salary previews and reports.
 
 The EPFO's monthly minimum admin charge (₹500 per establishment) is not applied. Per-employee EPS membership: Employee → Statutory.
 

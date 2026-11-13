@@ -1,7 +1,6 @@
 // Payslip PDF from a frozen payroll item (never from live salary data).
 import { loadJsPDF } from './lib.js';
 import { MONTHS, amountInWords, fmtDate } from './util.js';
-import { deductionRows, contributionLines, INFO_NOTE } from './pages/employer.js';
 
 const num = n => Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 const logoCache = new Map();
@@ -73,9 +72,8 @@ export async function generatePayslipPdf(company, item, run) {
 
   // earnings | deductions table
   const earnings = item.earnings_json || [];
-  // Employer EPF is listed under deductions; when the company pays it the row is informational (info: true).
-  const deductions = deductionRows(item.deductions_json || [], item.employer_json || []);
-  const hasInfo = deductions.some(d => d.info);
+  // Only amounts actually deducted from pay; employer contributions are not printed on the payslip.
+  const deductions = item.deductions_json || [];
   const rows = Math.max(earnings.length, deductions.length);
   const half = (W - 2 * M) / 2;
   doc.setFillColor(245, 244, 240); doc.rect(M, y - 12, W - 2 * M, 20, 'F');
@@ -87,18 +85,14 @@ export async function generatePayslipPdf(company, item, run) {
   for (let i = 0; i < rows; i++) {
     const e = earnings[i], d = deductions[i];
     if (e) { doc.text(e.name, M + 8, y); doc.text(num(e.amount), M + half - 8, y, { align: 'right' }); }
-    if (d && d.info) {
-      doc.setTextColor(120);
-      doc.text(d.name + ' †', M + half + 8, y); doc.text(`(${num(d.amount)})`, W - M - 8, y, { align: 'right' });
-      doc.setTextColor(30);
-    } else if (d) { doc.text(d.name, M + half + 8, y); doc.text(num(d.amount), W - M - 8, y, { align: 'right' }); }
+    if (d) { doc.text(d.name, M + half + 8, y); doc.text(num(d.amount), W - M - 8, y, { align: 'right' }); }
     y += 16;
   }
   doc.setDrawColor(220); doc.line(M, y - 8, W - M, y - 8);
   y += 6;
   doc.setFont('helvetica', 'bold');
   doc.text('Total earnings', M + 8, y); doc.text(num(item.earned_gross), M + half - 8, y, { align: 'right' });
-  doc.text(hasInfo ? 'Total deducted from pay' : 'Total deductions', M + half + 8, y); doc.text(num(item.total_deductions), W - M - 8, y, { align: 'right' });
+  doc.text('Total deductions', M + half + 8, y); doc.text(num(item.total_deductions), W - M - 8, y, { align: 'right' });
   doc.line(M + half, y - 12 - rows * 16 - 28, M + half, y + 6);
   doc.rect(M, y - 12 - rows * 16 - 28 - 10, W - 2 * M, rows * 16 + 56);
   y += 34;
@@ -109,40 +103,12 @@ export async function generatePayslipPdf(company, item, run) {
   doc.text(`(Rupees ${amountInWords(item.net)} only)`, M, y + 14);
   if (Number(item.lop_amount) > 0) doc.text(`Monthly gross Rs. ${num(item.gross)}, less loss of pay Rs. ${num(item.lop_amount)} for ${num(item.lop_days)} day(s).`, M, y + 28);
 
-  // Employer contributions (informational only: not part of net pay)
-  const er = contributionLines(item.employer_json || []);
+  // Only when the company makes the employee bear Employer EPF/EPS is it a real deduction; explain that line.
   const recovered = deductions.filter(d => d.statutory_key === 'er_pf').reduce((s, d) => s + Number(d.amount), 0);
-  const notes = [];
-  if (hasInfo) notes.push(INFO_NOTE.replace('†', '(†)'));
-  if (recovered > 0) notes.push(`Employer EPF and EPS (Rs. ${num(recovered)}) are borne by the employee as per company policy, deducted separately from the employee's own PF.`);
-  if (notes.length) {
+  if (recovered > 0) {
     doc.setFontSize(8.5); doc.setTextColor(110);
-    const lines = doc.splitTextToSize(notes.join(' '), W - 2 * M);
+    const lines = doc.splitTextToSize(`Employer EPF and EPS (Rs. ${num(recovered)}) are borne by the employee as per company policy, deducted separately from the employee's own PF.`, W - 2 * M);
     doc.text(lines, M, y + 42);
-    y += 12 * lines.length;
-  }
-  if (er.length || hasInfo) {
-    y += 52;
-    doc.setFillColor(245, 244, 240); doc.rect(M, y - 12, W - 2 * M, 20, 'F');
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(60);
-    doc.text('EMPLOYER CONTRIBUTIONS (for information, not deducted from pay)', M + 8, y + 1);
-    doc.text('WAGES', W - M - 110, y + 1, { align: 'right' });
-    doc.text('AMOUNT (Rs.)', W - M - 8, y + 1, { align: 'right' });
-    doc.setFont('helvetica', 'normal'); doc.setTextColor(30);
-    y += 22;
-    for (const l of er) {
-      doc.text(l.name, M + 8, y);
-      doc.text(l.wages ? num(l.wages) : '-', W - M - 110, y, { align: 'right' });
-      doc.text(num(l.amount), W - M - 8, y, { align: 'right' });
-      y += 15;
-    }
-    doc.setDrawColor(220); doc.line(M, y - 9, W - M, y - 9);
-    y += 4;
-    doc.setFont('helvetica', 'bold');
-    doc.text(hasInfo ? 'Total employer contribution (incl. Employer EPF)' : 'Total employer contribution', M + 8, y); doc.text(num(item.employer_total), W - M - 8, y, { align: 'right' });
-    doc.setFont('helvetica', 'normal');
-    y += 15;
-    doc.text('Cost to company this month', M + 8, y); doc.text(num(Number(item.earned_gross) + Number(item.employer_total || 0)), W - M - 8, y, { align: 'right' });
   }
 
   doc.setFontSize(8); doc.setTextColor(140);
