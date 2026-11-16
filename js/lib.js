@@ -5,7 +5,14 @@ export {
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 
-export const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+// The session lives in sessionStorage: opening the app in a new tab / browser
+// always starts at the login page; a refresh in the same tab stays signed in.
+try {   // drop sessions saved by older versions (localStorage kept users signed in)
+  for (const k of Object.keys(localStorage)) if (/^sb-.*-auth-token/.test(k)) localStorage.removeItem(k);
+} catch { /* storage blocked */ }
+export const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true },
+});
 
 /** Await a supabase query and throw on error. */
 export async function q(promise) {

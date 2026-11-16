@@ -88,3 +88,9 @@ export function amountInWords(num) {
 }
 
 export const navigate = path => { location.hash = '#' + path; };
+
+/** Logins may be a plain username (e.g. "admin"); Supabase needs an email, so it becomes <username>@payroll.local. */
+export const LOGIN_DOMAIN = 'payroll.local';
+export const loginEmail = v => { const t = (v || '').trim().toLowerCase(); return !t || t.includes('@') ? t : `${t}@${LOGIN_DOMAIN}`; };
+/** Shows "admin" instead of "admin@payroll.local". */
+export const loginName = e => (e || '').endsWith('@' + LOGIN_DOMAIN) ? e.slice(0, -(LOGIN_DOMAIN.length + 1)) : (e || '');

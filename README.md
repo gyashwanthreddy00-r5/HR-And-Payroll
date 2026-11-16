@@ -30,6 +30,20 @@ limits each user to companies they belong to, by role:
 `create_company()` seeds Basic/HRA/Special/PF/ESI/PT/TDS components, Staff/Interns structures, leave types and Telangana PT slabs.
 Locked runs are frozen by a trigger; payroll items store a copy of every computed line, so later salary revisions never change old payslips.
 
+**Super admin** (migration `005_platform_admin.sql`): logins in `platform_admins` get a **Companies** page where they
+create a company and its HR login in one go (`admin_create_company()`). Nobody else can create companies; a login
+without a company sees "ask your administrator". Add another super admin in SQL:
+`insert into platform_admins(user_id) select id from auth.users where email = '...';`
+
+**Settings menu group** (admin only): Settings, Roles & Permissions, User Management, Pages Management
+(rename / reorder / switch off menu pages) and Role-Page Assignment (which pages HR and Accountant see), stored per
+company in `company_pages` / `company_role_pages` (migration `006_pages_access.sql`). This controls the menu only;
+data access per role is enforced by RLS.
+
+**User accounts** are created by an admin in Settings → Users & roles (email + password + role) via
+`admin_create_company_user()` (migration `004_admin_create_user.sql`). The sign-in page has no public sign-up;
+also turn off Supabase → Authentication → Sign In / Providers → "Allow new users to sign up".
+
 ## Demo data
 
 `supabase/seed_demo.sql` creates **Acme Infotech Pvt Ltd** for an existing user (replace `:uid`): 12 employees, 3 structures,
