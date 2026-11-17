@@ -1,5 +1,5 @@
 import { html, useState, sb, q } from '../lib.js';
-import { useAsync, Async, useAction, Field, INDIAN_STATES } from '../ui.js';
+import { useAsync, Async, useAction, Field, INDIAN_STATES, PasswordInput } from '../ui.js';
 import { loginEmail, loginName } from '../util.js';
 
 /** Super admin: create companies and their HR logins. */
@@ -11,8 +11,9 @@ export function Companies({ ctx, memberships, onOpen, onCreated }) {
   const blank = { name: '', state: 'Telangana', email: '', password: '' };
   const [f, setF] = useState(blank);
   const [busy, act] = useAction();
-  const [hrFor, setHrFor] = useState(null);   // company id whose "Add HR login" row is open
-  const [hr, setHr] = useState({ email: '', password: '' });
+  const [hrFor, setHrFor] = useState(null);   // company id whose "Add login" row is open
+  const [hr, setHr] = useState({ email: '', password: '', role: 'hr' });
+  const openLogin = (cid, role) => { setHrFor(cid); setHr({ email: '', password: '', role }); };
 
   const create = e => { e.preventDefault(); act(async () => {
     if (f.email.trim() && f.password.length < 6) throw new Error('HR password must be at least 6 characters');
@@ -23,9 +24,9 @@ export function Companies({ ctx, memberships, onOpen, onCreated }) {
 
   const addHr = cid => act(async () => {
     if (hr.password.length < 6) throw new Error('Password must be at least 6 characters');
-    await q(sb.rpc('admin_create_company_user', { p_company: cid, p_email: loginEmail(hr.email), p_password: hr.password, p_role: 'hr' }));
-    setHr({ email: '', password: '' }); setHrFor(null); hrs.reload();
-  }, 'HR login created');
+    await q(sb.rpc('admin_create_company_user', { p_company: cid, p_email: loginEmail(hr.email), p_password: hr.password, p_role: hr.role }));
+    setHr({ email: '', password: '', role: 'hr' }); setHrFor(null); hrs.reload();
+  }, (hr.role === 'accountant' ? 'Accountant' : 'HR') + ' login created');
 
   return html`<div class="stack">
     <form class="card stack" onSubmit=${create}>
@@ -37,7 +38,7 @@ export function Companies({ ctx, memberships, onOpen, onCreated }) {
         <${Field} label="HR username or email" hint="Optional. HR signs in with this and sees only this company.">
           <input type="text" autocomplete="off" placeholder="hr@company.com" value=${f.email} onInput=${e => setF({ ...f, email: e.target.value })} /><//>
         <${Field} label="HR password" hint="At least 6 characters. Share it with the HR person.">
-          <input type="password" autocomplete="new-password" disabled=${!f.email.trim()} value=${f.password} onInput=${e => setF({ ...f, password: e.target.value })} /><//>
+          <${PasswordInput} autocomplete="new-password" disabled=${!f.email.trim()} value=${f.password} onInput=${e => setF({ ...f, password: e.target.value })} /><//>
       </div>
       <div class="row"><span class="spacer" /><button class="primary" disabled=${busy || !f.name.trim()}>Create company</button></div>
     </form>
@@ -53,12 +54,15 @@ export function Companies({ ctx, memberships, onOpen, onCreated }) {
           <td>${c.state}</td>
           <td>${logins.length ? logins.map(r => html`<div>${loginName(r.email)} <span class="badge">${r.role}</span></div>`) : html`<span class="muted">None yet</span>`}
             ${hrFor === c.id && html`<div class="row" style="margin-top:8px">
-              <input type="text" style="width:200px" placeholder="hr1 or hr@company.com" autocomplete="off" value=${hr.email} onInput=${e => setHr({ ...hr, email: e.target.value })} />
-              <input type="password" style="width:160px" placeholder="Password (min 6)" autocomplete="new-password" value=${hr.password} onInput=${e => setHr({ ...hr, password: e.target.value })} />
+              <select style="width:130px" value=${hr.role} onChange=${e => setHr({ ...hr, role: e.target.value })}>
+                <option value="hr">HR</option><option value="accountant">Accountant</option></select>
+              <input type="text" style="width:200px" placeholder=${hr.role === 'accountant' ? 'accounts1 or accounts@company.com' : 'hr1 or hr@company.com'} autocomplete="off" value=${hr.email} onInput=${e => setHr({ ...hr, email: e.target.value })} />
+              <${PasswordInput} style="width:180px" placeholder="Password (min 6)" autocomplete="new-password" value=${hr.password} onInput=${e => setHr({ ...hr, password: e.target.value })} />
               <button class="sm primary" disabled=${busy || !hr.email.trim()} onClick=${() => addHr(c.id)}>Create</button>
               <button class="sm" onClick=${() => setHrFor(null)}>Cancel</button></div>`}</td>
           <td class="num"><div class="row" style="justify-content:flex-end;gap:6px">
-            ${m.role === 'admin' && hrFor !== c.id && html`<button class="sm" onClick=${() => { setHrFor(c.id); setHr({ email: '', password: '' }); }}>+ HR login</button>`}
+            ${m.role === 'admin' && hrFor !== c.id && html`<button class="sm" onClick=${() => openLogin(c.id, 'hr')}>+ HR login</button>
+              <button class="sm" onClick=${() => openLogin(c.id, 'accountant')}>+ Accountant login</button>`}
             ${c.id !== ctx.company.id && html`<button class="sm" onClick=${() => onOpen(c.id)}>Open</button>`}</div></td>
         </tr>`;
       })}</tbody>

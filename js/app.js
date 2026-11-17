@@ -1,5 +1,5 @@
 import { html, render, useState, useEffect, sb, q } from './lib.js';
-import { Loading, Field, INDIAN_STATES, useAction, Modal } from './ui.js';
+import { Loading, Field, INDIAN_STATES, useAction, Modal, PasswordInput } from './ui.js';
 import { toast, navigate, loginEmail, loginName } from './util.js';
 import { Setup } from './pages/setup.js';
 import { Dashboard } from './pages/dashboard.js';
@@ -115,7 +115,7 @@ function SetPassword({ onDone }) {
     const { error } = await sb.auth.updateUser({ password: pw }); if (error) throw error; onDone();
   }, 'Password updated'); }}>
     <h3>Choose a new password</h3>
-    <input type="password" minlength="6" required value=${pw} onInput=${e => setPw(e.target.value)} />
+    <${PasswordInput} minlength="6" required autocomplete="new-password" value=${pw} onInput=${e => setPw(e.target.value)} />
     <button class="primary" disabled=${busy}>Save password</button>
   </form></div>`;
 }
@@ -132,8 +132,8 @@ function ChangePassword({ onClose }) {
   }, 'Password changed'); };
   return html`<${Modal} title="Change password" onClose=${onClose}>
     <form class="stack" onSubmit=${save}>
-      <${Field} label="New password" hint="At least 6 characters"><input type="password" autocomplete="new-password" required value=${f.pw} onInput=${e => setF({ ...f, pw: e.target.value })} /><//>
-      <${Field} label="Repeat new password"><input type="password" autocomplete="new-password" required value=${f.pw2} onInput=${e => setF({ ...f, pw2: e.target.value })} /><//>
+      <${Field} label="New password" hint="At least 6 characters"><${PasswordInput} autocomplete="new-password" required value=${f.pw} onInput=${e => setF({ ...f, pw: e.target.value })} /><//>
+      <${Field} label="Repeat new password"><${PasswordInput} autocomplete="new-password" required value=${f.pw2} onInput=${e => setF({ ...f, pw2: e.target.value })} /><//>
       <div class="row"><span class="spacer" /><button type="button" onClick=${onClose}>Cancel</button><button class="primary" disabled=${busy}>Save password</button></div>
     </form><//>`;
 }

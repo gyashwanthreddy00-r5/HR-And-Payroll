@@ -80,3 +80,17 @@ export function Modal({ title, onClose, wide, children }) {
 export const Badge = ({ kind = '', children }) => html`<span class=${'badge ' + kind}>${children}</span>`;
 
 export const INDIAN_STATES = ['Andhra Pradesh','Assam','Bihar','Chhattisgarh','Delhi','Goa','Gujarat','Haryana','Jharkhand','Karnataka','Kerala','Madhya Pradesh','Maharashtra','Meghalaya','Odisha','Puducherry','Punjab','Rajasthan','Sikkim','Tamil Nadu','Telangana','Tripura','Uttar Pradesh','Uttarakhand','West Bengal','Other / outside India'];
+
+const EYE = '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>';
+const EYE_OFF = '<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.53 13.53 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><path d="M2 2l20 20"/>';
+
+/** Password field with a show/hide eye toggle. Extra props go to the <input>; `style` goes to the wrapper. */
+export function PasswordInput({ style, disabled, ...props }) {
+  const [show, setShow] = useState(false);
+  const label = show ? 'Hide password' : 'Show password';
+  return html`<div class=${'ibox pw-box' + (disabled ? ' disabled' : '')} style=${style}>
+    <input ...${props} disabled=${disabled} type=${show ? 'text' : 'password'} />
+    <button type="button" class="eye" disabled=${disabled} onClick=${() => setShow(s => !s)} title=${label} aria-label=${label}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" dangerouslySetInnerHTML=${{ __html: show ? EYE_OFF : EYE }}></svg></button>
+  </div>`;
+}
